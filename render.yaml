@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: dogpark-server
+    runtime: node
+    region: oregon
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
