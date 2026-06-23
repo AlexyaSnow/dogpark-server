@@ -1,3 +1,4 @@
+const http = require('http');
 const { Server } = require('socket.io');
 const { isParkOpen, msUntilClose } = require('./parkSchedule');
 const { upsertSession, removeSession, getVisibleSessions, clearAll, pruneStale } = require('./sessionManager');
@@ -5,11 +6,24 @@ const bannedWords = require('./data/bannedWords.json');
 
 const PORT = process.env.PORT || 3001;
 
-const io = new Server(PORT, {
+// Serveur HTTP avec endpoint /health pour UptimeRobot
+const httpServer = http.createServer((req, res) => {
+  if (req.url === '/health' || req.url === '/') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'ok', park: isParkOpen() ? 'open' : 'closed', ts: Date.now() }));
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+
+const io = new Server(httpServer, {
   cors: { origin: '*' },
 });
 
-console.log(`🐾 Serveur DogPark démarré sur le port ${PORT}`);
+httpServer.listen(PORT, () => {
+  console.log(`🐾 Serveur DogPark démarré sur le port ${PORT}`);
+});
 
 // Reset complet à la fermeture du parc
 scheduleNightlyReset();
@@ -61,27 +75,23 @@ io.on('connection', socket => {
     return;
   }
 
-  // Rejoindre le parc
   socket.on('join', ({ sessionId, visible }) => {
     socket.data.sessionId = sessionId;
     upsertSession(sessionId, { visible, note: null });
     broadcast(io);
   });
 
-  // Mise à jour position GPS
   socket.on('position', ({ sessionId, position, visible, note }) => {
-    if (containsBannedWord(note)) return; // double-check serveur
+    if (containsBannedWord(note)) return;
     upsertSession(sessionId, { position, visible, note: visible ? note : null });
     broadcast(io);
   });
 
-  // Toggle visible/invisible
   socket.on('visibility', ({ sessionId, visible }) => {
     upsertSession(sessionId, { visible });
     broadcast(io);
   });
 
-  // Note modifiée
   socket.on('note', ({ sessionId, note }) => {
     if (containsBannedWord(note)) {
       socket.emit('note_rejected', { reason: 'banned_word' });
@@ -91,7 +101,6 @@ io.on('connection', socket => {
     broadcast(io);
   });
 
-  // Quitter la zone GPS
   socket.on('leave', ({ sessionId }) => {
     removeSession(sessionId);
     broadcast(io);
