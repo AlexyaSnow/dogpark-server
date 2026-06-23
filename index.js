@@ -112,6 +112,10 @@ io.on('connection', socket => {
     return;
   }
 
+  // Instantané immédiat — utile aux visiteurs « à distance » qui observent
+  // sans participer (ils voient tout de suite qui est présent).
+  socket.emit('users', getVisibleSessions());
+
   // Anti-flood : compteur d'événements remis à zéro chaque seconde
   socket.data.events = 0;
   socket.data.lastPos = 0;
