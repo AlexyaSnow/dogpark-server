@@ -28,6 +28,14 @@ function clearAll() {
   Object.keys(sessions).forEach(k => delete sessions[k]);
 }
 
+function sessionCount() {
+  return Object.keys(sessions).length;
+}
+
+function hasSession(sessionId) {
+  return Object.prototype.hasOwnProperty.call(sessions, sessionId);
+}
+
 // Supprime les sessions inactives depuis plus de 5 minutes
 function pruneStale() {
   const cutoff = Date.now() - 5 * 60 * 1000;
@@ -36,4 +44,4 @@ function pruneStale() {
   });
 }
 
-module.exports = { upsertSession, removeSession, getVisibleSessions, clearAll, pruneStale };
+module.exports = { upsertSession, removeSession, getVisibleSessions, clearAll, pruneStale, sessionCount, hasSession };

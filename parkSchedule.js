@@ -10,6 +10,7 @@ const SCHEDULE = {
 };
 
 function isParkOpen() {
+  if (process.env.FORCE_OPEN === '1') return true; // tests/stress uniquement
   const now = new Date();
   const day = now.getDay();
   const hour = now.getHours();
