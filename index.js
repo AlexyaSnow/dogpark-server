@@ -16,16 +16,42 @@ const MIN_POS_MS     = 250;   // intervalle min entre 2 positions par socket
 const MAX_NOTE_LEN   = 80;    // longueur max d'une note
 const BROADCAST_MS   = 1000;  // diffusion groupée : 1 fois/seconde max
 
+// ─── Stats agrégées (en RAM, jamais d'identité, reset chaque soir) ──
+// On compte des PASSAGES, jamais des gens. Aucune donnée individuelle.
+const serverStartedAt = Date.now();
+let peakUsersToday = 0;       // pic de visiteurs simultanés aujourd'hui
+let totalSessionsToday = 0;   // nombre de sessions ouvertes aujourd'hui
+
+// ─── Garde-fous anti-crash ───────────────────────────────────
+// Un client malveillant ou un bug ne doit jamais faire tomber le serveur.
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ Exception non gérée (serveur maintenu en vie):', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️ Rejet de promesse non géré:', reason);
+});
+
 // Serveur HTTP avec endpoint /health pour UptimeRobot
+function statsPayload() {
+  return {
+    status: 'ok',
+    park: isParkOpen() ? 'open' : 'closed',
+    users: sessionCount(),            // visiteurs en ce moment
+    peakToday: peakUsersToday,        // pic simultané aujourd'hui
+    sessionsToday: totalSessionsToday,// passages aujourd'hui
+    capacity: MAX_SESSIONS,           // plafond
+    uptimeSeconds: Math.floor((Date.now() - serverStartedAt) / 1000),
+    ts: Date.now(),
+  };
+}
+
 const httpServer = http.createServer((req, res) => {
-  if (req.url === '/health' || req.url === '/') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      status: 'ok',
-      park: isParkOpen() ? 'open' : 'closed',
-      users: sessionCount(),
-      ts: Date.now(),
-    }));
+  if (req.url === '/health' || req.url === '/' || req.url === '/stats') {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*', // /stats consultable depuis un tableau de bord
+    });
+    res.end(JSON.stringify(statsPayload()));
   } else {
     res.writeHead(404);
     res.end();
@@ -65,9 +91,13 @@ function scheduleNightlyReset() {
   const delay = msUntilClose();
   if (delay > 0) {
     setTimeout(() => {
+      // Bilan agrégé du jour AVANT d'effacer (chiffres seulement, aucune identité)
+      console.log(`📊 Bilan du jour — pic: ${peakUsersToday} visiteurs · sessions: ${totalSessionsToday}`);
       clearAll();
       io.emit('park_closed');
       console.log('🌙 Parc fermé — mémoire effacée');
+      peakUsersToday = 0;
+      totalSessionsToday = 0;
       scheduleNightlyReset();
     }, delay);
   }
@@ -144,8 +174,10 @@ io.on('connection', socket => {
   socket.on('join', ({ sessionId, visible } = {}) => {
     if (!rateOk() || !validId(sessionId)) return;
     if (!admit(sessionId)) { socket.disconnect(true); return; }
+    if (!hasSession(sessionId)) totalSessionsToday++;
     socket.data.sessionId = sessionId;
     upsertSession(sessionId, { visible: !!visible, note: null });
+    peakUsersToday = Math.max(peakUsersToday, sessionCount());
     scheduleBroadcast();
   });
 
@@ -157,7 +189,9 @@ io.on('connection', socket => {
     if (!admit(sessionId)) return;
     const clean = cleanNote(note);
     if (containsBannedWord(clean)) return;
+    if (!hasSession(sessionId)) totalSessionsToday++;
     upsertSession(sessionId, { position, visible: !!visible, note: visible ? clean : null });
+    peakUsersToday = Math.max(peakUsersToday, sessionCount());
     scheduleBroadcast();
   });
 
