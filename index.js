@@ -91,8 +91,8 @@ function scheduleNightlyReset() {
   const delay = msUntilClose();
   if (delay > 0) {
     setTimeout(() => {
-      // Bilan agrégé du jour AVANT d'effacer (chiffres seulement, aucune identité)
-      console.log(`📊 Bilan du jour — pic: ${peakUsersToday} visiteurs · sessions: ${totalSessionsToday}`);
+      // On ne conserve RIEN : les compteurs agrégés vivent en RAM et sont
+      // effacés à la fermeture, jamais écrits ni dans un fichier ni dans les logs.
       clearAll();
       io.emit('park_closed');
       console.log('🌙 Parc fermé — mémoire effacée');
